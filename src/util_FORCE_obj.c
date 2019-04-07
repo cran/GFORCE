@@ -168,8 +168,8 @@ void smoothed_gradient_X_base(double* X, double* ESI, double* GX_t, double* d2_t
     F77_NAME(dsymm)(&SIDE_L,&UPLO,&d,&d,&ALPHA,ESI,&d,d2_tmp,&d,&BETA,GX_t,&d); // computes ESI * X * ESI
 
     //eigenvectors will overwrite input matrix, so GX_t becomes V, eigenvectors
-    F77_CALL(dsyevd)(&JOBZV,&UPLO,&d,GX_t,&d,w,work->dwork,&(work->ldwork),
-                work->iwork,&(work->liwork),&lapack_info);
+    F77_CALL(dsyevd)(&JOBZV,&UPLO,&d,GX_t,&d,w,work->dwork,&(work->dsyevd_ldwork),
+                work->iwork,&(work->dsyevd_liwork),&lapack_info);
 }
 
 // REQUIRES work -> dwork be of length at least dseyvd_ldwork_N

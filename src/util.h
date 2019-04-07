@@ -54,7 +54,7 @@ void allocate_workspace_FORCE(int d, int K, workspace* work);
 void allocate_workspace_FORCE_adapt(int d, workspace* work);
 void initialize_problem_instance(double* D, double* E, double* ESI, double mu,
                                 int d,int K, problem_instance* prob);
-double time_difference_ms(clock_t start, clock_t end);
+double time_difference_ms(struct timespec* start,struct timespec* end);
 void initialize_identity_matrix(double* restrict I, int d);
 
 // KMEANS CLUSTERING

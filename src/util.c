@@ -224,11 +224,11 @@ void initialize_identity_matrix(double* restrict I,int d){
 }
 
 
-double time_difference_ms(clock_t start, clock_t end){
+double time_difference_ms(struct timespec* start,struct timespec* end){
     double diff;
-    int msec_diff = end-start;
-    diff = (((double) msec_diff))/CLOCKS_PER_SEC;
-    return diff; 
+    diff = (end->tv_sec - start->tv_sec);
+    diff += (end->tv_nsec - start->tv_nsec) / 1000000000.0;
+    return diff;
 }
 
 

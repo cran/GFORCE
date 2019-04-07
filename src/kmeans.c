@@ -84,9 +84,10 @@ void kmeans_pp_impl(double const* restrict D, int K, int n, int m, int* restrict
     int tmp1;
     int num_iter = 0;
     double run_time = 0.0;
-    clock_t start_time = clock();
-    clock_t cur_time;
-    
+    struct timespec start_time, cur_time;
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+
     //choose first center
     double q = unif_rand(); // random U[0,1]
     int c_idx = round((n+0.98-1)*q - 0.49); // approximately U[0,d-1]
@@ -139,8 +140,8 @@ void kmeans_pp_impl(double const* restrict D, int K, int n, int m, int* restrict
     PutRNGstate();
     memcpy(centers_r,centers,K*m*sizeof(double));
     memcpy(cluster_assignment_r,cluster_assignment,n*sizeof(int));
-    cur_time = clock();
-    run_time = time_difference_ms(start_time,cur_time);
+    clock_gettime(CLOCK_MONOTONIC, &cur_time);
+    run_time = time_difference_ms(&start_time,&cur_time);
     *time_R = run_time;
     *num_iters_R = num_iter;
 }

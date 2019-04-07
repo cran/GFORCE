@@ -166,12 +166,17 @@ test_that("Projection onto C Perpendicular",{
 #' @useDynLib GFORCE test_project_C_perpendicular_nok
 test_that("Projection onto C Perpendicular (No K)",{
     set.seed(12345)
-    K <- 5
-    d <- 20
-    dat <- gforce.generator(K,d,d,3,graph='DeltaC',cov_gap_mult=4)
+    K <- 12
+    d <- 120
+    m <- floor(d/K)
+    n <- 2*d
+    dat <- gforce.generator(K,d,2*d,m,graph='scalefree',cov_gap_mult=1.0, error_base = 0.3,
+                            error_add = 0.0,corr_value = 0.3, normalize = TRUE)
     sh <- t(dat$X)%*%dat$X / d
     gh <- gforce.Gamma(dat$X)
-    diff <- diag(gh) - sh
+    D <- diag(gh) - sh
+    kappa_hat <- max(gh)*(d/n + sqrt(d/n))
+    D_adapt <- D + kappa_hat*diag(d)
     initial_mixing <- 2/d
     km_res <- gforce.kmeans(-sh,K,R_only=TRUE)
     km_res <- km_res$clusters
@@ -185,24 +190,25 @@ test_that("Projection onto C Perpendicular (No K)",{
 
     E_EVEV <- eigen(E)
     V <- E_EVEV$vectors
-    D <- diag(E_EVEV$values)
-    E_sqrt <- V%*%(D^(0.5))%*%t(V)
+    E_D <- diag(E_EVEV$values)
+    E_sqrt <- V%*%(E_D^(0.5))%*%t(V)
     ESI <- solve(E_sqrt)
 
-    mu <- 0.5*0.01/log(d)
+    mu <- 0.5*0.1/log(d)
     gradSX <- smoothed_gradient(X,E,ESI,mu)
 
     result <- .C(test_project_C_perpendicular_nok,
-                 D= as.double(diff),
+                 D= as.double(D_adapt),
                  d = as.integer(d),
                  GX_t = as.double(gradSX$GX),
                  GS_t = as.double(gradSX$GS))
     Z_proj <- matrix(result$GX_t,ncol=d)
 
-    # comp_Z <- project_C_perpendicular(gradSX$GX, gradSX$GS,diff)
+    comp_Z <- project_C_perpendicular_nok(gradSX$GX, gradSX$GS,D_adapt)
 
     expect_equal(rep(0,d),colSums(Z_proj))
     expect_equal(matrix(0,ncol=d,nrow=d),Z_proj-t(Z_proj))
+    expect_equal(comp_Z$Z_proj,Z_proj)
     })
 
 #' @useDynLib GFORCE test_project_E

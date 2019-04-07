@@ -7,6 +7,7 @@
 #include "util.h"
 #include "util_mops.h"
 
+
 // FUNCTION PROTOTPES
 void precompute_values(double* restrict Y_a_base, int* restrict group_sizes, double* restrict primal_value, double* restrict D, int* restrict ga_hat,
                         int d, int K, double* restrict dwork, int* restrict iwork);
@@ -14,8 +15,8 @@ void compute_Y_a(double* restrict Y_a_base, double* restrict Y_a_new, double Y_T
 
 //KMEANS DUAL SOLUTION MIN PRIMAL FORM
 //R ACCESS POINTS
-void kmeans_dual_solution_primal_min_R(int* ga_hat, double* D, int* K_0, int *dimension, 
-                                        double* eps1_0, double* eps2_0, double* Y_T_min_0, 
+void kmeans_dual_solution_primal_min_R(int* ga_hat, double* D, int* K_0, int *dimension,
+                                        double* eps1_0, double* eps2_0, double* Y_T_min_0,
                                         double* Y_a_r, double* Y_T_r, int* feasible_r) {
     int d = *dimension;
     int K = *K_0;
@@ -25,7 +26,7 @@ void kmeans_dual_solution_primal_min_R(int* ga_hat, double* D, int* K_0, int *di
     kmeans_dual_solution_primal_min(ga_hat,D,K,d,eps1,eps2,Y_T_min,Y_a_r,Y_T_r,feasible_r);
 }
 
-void kmeans_dual_solution_primal_min_nok_R(int* ga_hat, double* D, int *K_hat0, int *dimension, 
+void kmeans_dual_solution_primal_min_nok_R(int* ga_hat, double* D, int *K_hat0, int *dimension,
                                         double* eps1_0, double* Y_a_r, int* feasible_r) {
     int d = *dimension;
     int K_hat = *K_hat0;
@@ -65,7 +66,7 @@ void kmeans_dual_solution_primal_min_nok(int* restrict ga_hat, double* restrict 
 //REQUIRES d(d-1)/2 + 7d -2 length dwork
 //REQUIRES d+3K+3 length iwork
 //REQUIRES d length Y_a_r
-void kmeans_dual_solution_impl(int* restrict ga_hat, problem_instance* restrict prob, double eps1, double eps2, 
+void kmeans_dual_solution_impl(int* restrict ga_hat, problem_instance* restrict prob, double eps1, double eps2,
                                 double Y_T_min, double* restrict Y_a_r, double* restrict Y_T_r, int* restrict feasible_r,
                                 workspace* restrict work) {
     // Local Variable Declarations
@@ -78,6 +79,7 @@ void kmeans_dual_solution_impl(int* restrict ga_hat, problem_instance* restrict 
     double* T_tau; // for reduction to tridiagonal form
     int* group_sizes;
     double dtmp1,Y_T_max,Y_T_best,em_min;
+    double* dptmp1;
     int tmp1,tmp2;
     int iter_feasible,done,same_group; //boolean values
     double* D = prob -> D;
@@ -113,14 +115,14 @@ void kmeans_dual_solution_impl(int* restrict ga_hat, problem_instance* restrict 
 
     //Binary Search For Y_T
     done = 0;
-    Y_T_max = abs(primal_value);
+    Y_T_max = primal_value > 0 ? primal_value : -primal_value;
     Y_T_best = Y_T_max;
     while(!done){
         //Update dual variables
         Y_T_new = (Y_T_max + Y_T_min)/2;
         compute_Y_a(Y_a_base, Y_a_new, Y_T_new, ga_hat, group_sizes, d);
         iter_feasible = 1;
-        
+
         //iterate over off diagonal elements
         // This is will be stored in packed form
         // A[i + j(j+1)/2 ] i is row, j is column
@@ -166,7 +168,9 @@ void kmeans_dual_solution_impl(int* restrict ga_hat, problem_instance* restrict 
             if(em_min > eps2){
                 feasible = 1;
                 Y_T_best = Y_T_new;
+                dptmp1 = Y_a_best;
                 Y_a_best = Y_a_new;
+                Y_a_new = dptmp1;
                 Y_T_max = Y_T_new;
             } else{
                 Y_T_min = Y_T_new;
@@ -191,7 +195,6 @@ void kmeans_dual_solution_impl(int* restrict ga_hat, problem_instance* restrict 
 }
 
 
-
 //Internal Access Point
 //KMEANS DUAL SOLUTION MIN PRIMAL FORM (K IS UNKNOWN)
 //ga_hat should be in "Standard Form" - group names are use 1...K
@@ -208,6 +211,7 @@ void kmeans_dual_solution_nok_impl(int* restrict ga_hat, problem_instance* restr
     int* group_sizes;
     double dtmp1,em_min;
     int tmp1;
+    int tmp2;
     int same_group; //boolean values
     double* D = prob -> D;
     int d = prob -> d;
@@ -232,7 +236,7 @@ void kmeans_dual_solution_nok_impl(int* restrict ga_hat, problem_instance* restr
     // Compute Y_a (Y_T is always 0 when K is unknown)
     precompute_values(Y_a_r,group_sizes,&primal_value,D,ga_hat,d,K_hat,R,group_sizes+K_hat+1);
 
-        
+
     //iterate over off diagonal elements
     // This is will be stored in packed form
     // A[i + j(j+1)/2 ] i is row, j is column
@@ -241,12 +245,12 @@ void kmeans_dual_solution_nok_impl(int* restrict ga_hat, problem_instance* restr
     tmp1 = 0;
     for(int b = 0; b < d && feasible; b++){
         for(int a = 0; a <= b && feasible; a++) {
-            tmp1 = b*d+a; // index into D
-            dtmp1 = D[tmp1] + Y_a_r[a] + Y_a_r[b];
+            tmp2 = b*d+a; // index into D
+            dtmp1 = D[tmp2] + Y_a_r[a] + Y_a_r[b];
             same_group = ga_hat[a] == ga_hat[b];
             //checks dual feasibility of Y_ab
             if(!same_group){
-                if(dtmp1 < 0.0){
+                if(dtmp1 < eps1){
                     feasible = 0;
                 }
                 R[tmp1] = 0;
@@ -292,7 +296,7 @@ void precompute_values(double* restrict Y_a_base, int* restrict group_sizes, dou
     double dtmp1;
     double* group_sums;
     int* group_tailp1_idx;
-    int* group_start_idx; 
+    int* group_start_idx;
     int* group_idxs; // stores by group all idxs in that group
     double primal_value_0 = 0;
 

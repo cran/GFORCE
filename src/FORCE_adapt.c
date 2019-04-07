@@ -54,7 +54,6 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
     double km_val_best;
     double km_val_new;
     double km_best_time = -1;
-    int K_hat = -1;
     int km_iter_best = 1;
     int km_iter_total = 1;
     int new_best_km = 0;
@@ -66,8 +65,8 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
     double* Y_a_best = (double *) R_alloc(d,sizeof(double));
 
     // Projected Gradient Descent A - declarations
-    clock_t start_time = clock();
-    clock_t cur_time;
+    struct timespec start_time, cur_time;
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
     int grad_iter_best = -1;
     double grad_iter_best_time = 0;
     int grad_iter_total = 1;
@@ -115,7 +114,7 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
     int early_stop_mode = opts -> early_stop_mode;
     int early_stop_lag = opts -> early_stop_lag;
     double early_stop_eps = opts -> early_stop_eps;
-    double* last_es_obj;
+    double* last_es_obj = NULL;
     if(early_stop_mode > 0){
         last_es_obj = (double *) R_alloc(early_stop_lag,sizeof(double));
         for(int i = 0; i < early_stop_lag; i++) {
@@ -129,14 +128,14 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
     if(primal_only == 0) {
         tmp_hc_sol.clusters = km_clusters_best;
         hclust_FORCE(D_kmeans,d,&tmp_hc_sol,&work);
-        K_hat = tmp_hc_sol.K;
+        prob.K = tmp_hc_sol.K;
         km_val_best = clust_to_opt_val_adapt(&prob,&tmp_hc_sol,&work);
-        cur_time = clock();
-        km_best_time = time_difference_ms(start_time,cur_time);
+        clock_gettime(CLOCK_MONOTONIC, &cur_time);
+        km_best_time = time_difference_ms(&start_time,&cur_time);
         kmeans_dual_solution_nok_impl(km_clusters_best,&prob,DUAL_EPS1_DEFAULT,Y_a_best, &dc, &work);
         if(dc == 1){
-            cur_time = clock();
-            dc_time = time_difference_ms(start_time,cur_time);
+            clock_gettime(CLOCK_MONOTONIC, &cur_time);
+            dc_time = time_difference_ms(&start_time,&cur_time);
             dc_grad_iter = grad_iter_total;
         }
     }
@@ -151,6 +150,7 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
     smoothed_objective(&prob,Z_tp1,&lambda_min_tp1,&obj_tp1,&work);
     lambda_min_best = lambda_min_tp1;
     obj_best = obj_tp1;
+    memcpy(Z_best,Z_tp1,d2*sizeof(double));
 
     if(verbosity > -1){
         Rprintf("\tSolving K-Means SDP with FORCE\r\n");
@@ -279,8 +279,8 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
                 obj_best = obj_tp1;
                 lambda_min_best = lambda_min_tp1;
                 grad_iter_best = grad_iter_total;
-                cur_time = clock();
-                grad_iter_best_time = time_difference_ms(start_time,cur_time);
+                clock_gettime(CLOCK_MONOTONIC, &cur_time);
+                grad_iter_best_time = time_difference_ms(&start_time,&cur_time);
             }
 
             if(verbosity > 0){
@@ -290,6 +290,7 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
 
             // STEP 3AH -- Check early stop relative error criterion
             if(early_stop_mode > 0) {
+                dtmp1 = last_es_obj[ grad_iter_total % early_stop_lag];
                 last_es_obj[ grad_iter_total % early_stop_lag] = obj_tp1;
             }
             if(early_stop_mode == 1 && grad_iter_total-last_restart > early_stop_lag) {
@@ -300,39 +301,48 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
                 early_stop = dtmp1 > early_stop_eps ? 0 : 1;
             }
             if(early_stop_mode == 2 && grad_iter_total-last_restart > early_stop_lag) {
-                //relative error
-                dtmp1 = min_array(early_stop_lag,last_es_obj);
                 dtmp2 = max_array(early_stop_lag,last_es_obj);
-                dtmp1 = (dtmp2 - dtmp1) / (dtmp1 + 0.000001);
-                early_stop = dtmp1 > early_stop_eps ? 0 : 1;
+                if(verbosity > 2){
+                    Rprintf("\t\tDebug %f\r\n",early_stop_eps);
+                    Rprintf("\t\tDebug %f\r\n",dtmp1);
+                    Rprintf("\t\tDebug %f\r\n",dtmp2);
+                }
+                double dtmp3 = dtmp1 > 0 ? dtmp1 : -1.0*dtmp1;
+                double dtmp4 = (dtmp2 - dtmp1) / (dtmp3 + 0.000001);
+                if(verbosity > 2) {
+                    Rprintf("\t\tDebug %f\r\n",dtmp4);
+                }
+                early_stop = dtmp4 > early_stop_eps ? 0 : 1;
             }
 
         }
 
         // STEP 3B -- Dual Certificate Search -- HC is deterministic
-        new_best_km = 0;
-        project_E(&prob,Z_best,lambda_min_best,results->B_Z_best);
-        tmp_hc_sol.clusters = km_clusters_new;
-        hclust_FORCE(results->B_Z_best,d,&tmp_hc_sol,&work);
-        km_val_new = clust_to_opt_val_adapt(&prob,&tmp_hc_sol,&work);
-        km_iter_total++;
-        if(km_val_new < km_val_best) {
-            km_val_best = km_val_new;
-            km_clusters_tmp = km_clusters_best;
-            km_clusters_best = km_clusters_new;
-            km_clusters_new = km_clusters_tmp;
-            km_iter_best = km_iter_total;
-            K_hat = tmp_hc_sol.K;
-            new_best_km = 1;
-            cur_time = clock();
-            km_best_time = time_difference_ms(start_time,cur_time);
-        }
-        if(new_best_km && dc == 0){
-            kmeans_dual_solution_nok_impl(km_clusters_best,&prob,DUAL_EPS1_DEFAULT,Y_a_best, &dc, &work);
-            if(dc == 1){
-                cur_time = clock();
-                dc_time = time_difference_ms(start_time,cur_time);
-                dc_grad_iter = grad_iter_total;
+        if(primal_only == 0  && dc == 0) {
+            new_best_km = 0;
+            project_E(&prob,Z_best,lambda_min_best,results->B_Z_best);
+            tmp_hc_sol.clusters = km_clusters_new;
+            hclust_FORCE(results->B_Z_best,d,&tmp_hc_sol,&work);
+            km_val_new = clust_to_opt_val_adapt(&prob,&tmp_hc_sol,&work);
+            km_iter_total++;
+            if(km_val_new < km_val_best) {
+                km_val_best = km_val_new;
+                km_clusters_tmp = km_clusters_best;
+                km_clusters_best = km_clusters_new;
+                km_clusters_new = km_clusters_tmp;
+                km_iter_best = km_iter_total;
+                prob.K = tmp_hc_sol.K;
+                new_best_km = 1;
+                clock_gettime(CLOCK_MONOTONIC, &cur_time);
+                km_best_time = time_difference_ms(&start_time,&cur_time);
+            }
+            if(new_best_km){
+                kmeans_dual_solution_nok_impl(km_clusters_best,&prob,DUAL_EPS1_DEFAULT,Y_a_best, &dc, &work);
+                if(dc == 1){
+                    clock_gettime(CLOCK_MONOTONIC, &cur_time);
+                    dc_time = time_difference_ms(&start_time,&cur_time);
+                    dc_grad_iter = grad_iter_total;
+                }
             }
         }
 
@@ -374,8 +384,8 @@ void FORCE_adapt(double* D, double* D_kmeans, double* E, double* ESI,
     results->grad_iter_best = grad_iter_best;
     results->grad_iter_best_time = grad_iter_best_time;
     results->kmeans_opt_val = km_val_best;
-    cur_time = clock();
-    results->total_time = time_difference_ms(start_time,cur_time);
+    clock_gettime(CLOCK_MONOTONIC, &cur_time);
+    results->total_time = time_difference_ms(&start_time,&cur_time);
 
     if(verbosity > -1){
         Rprintf("\tFORCE Algorithm Complete\r\n");

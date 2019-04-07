@@ -4,8 +4,8 @@
 \alias{gforce.PECOK}
 \title{Solve PECOK with FORCE.}
 \usage{
-gforce.PECOK(K, X = NULL, D = NULL, sigma_hat = NULL, force_opts = NULL,
-  X0 = NULL, E = NULL, gamma_par = FALSE)
+gforce.PECOK(K, X = NULL, D = NULL, sigma_hat = NULL,
+  force_opts = NULL, X0 = NULL, E = NULL, gamma_par = FALSE)
 }
 \arguments{
 \item{K}{number of clusters.}

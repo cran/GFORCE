@@ -5,8 +5,8 @@
 \title{Data generator.}
 \usage{
 gforce.generator(K, d, n, m, graph = "DeltaC", num_hubs = NULL,
-  band_size = 3, cov_gap_mult = 1, error_base = 0.25, error_add = 0.25,
-  corr_value = 0.3, normalize = TRUE)
+  band_size = 3, cov_gap_mult = 1, error_base = 0.25,
+  error_add = 0.25, corr_value = 0.3, normalize = TRUE)
 }
 \arguments{
 \item{K}{number of clusters.}

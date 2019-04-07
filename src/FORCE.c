@@ -67,8 +67,9 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
     double Y_T_best = 0.0;
 
     // Projected Gradient Descent A - declarations
-    clock_t start_time = clock();
-    clock_t cur_time;
+    struct timespec start_time, cur_time;
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+
     int grad_iter_best = -1;
     double grad_iter_best_time = 0;
     int grad_iter_total = 1;
@@ -130,8 +131,8 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
     if(primal_only == 0) {
         kmeans_pp_impl(D_kmeans,K,d,d,km_clusters_best,km_centers_new,&lloyds_updates,&lloyds_runtime,&work);
         km_val_best = clust_to_opt_val(&prob,km_clusters_best,&work);
-        cur_time = clock();
-        km_best_time = time_difference_ms(start_time,cur_time);
+        clock_gettime(CLOCK_MONOTONIC, &cur_time);
+        km_best_time = time_difference_ms(&start_time,&cur_time);
         for(int i=0; i < km_rep - 1; i++){
             kmeans_pp_impl(D_kmeans,K,d,d,km_clusters_new,km_centers_new,&lloyds_updates,&lloyds_runtime,&work);
             km_val_new = clust_to_opt_val(&prob,km_clusters_new,&work);
@@ -142,16 +143,16 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
                 km_clusters_best = km_clusters_new;
                 km_clusters_new = km_clusters_tmp;
                 km_iter_best = km_iter_total;
-                cur_time = clock();
-                km_best_time = time_difference_ms(start_time,cur_time);
+                clock_gettime(CLOCK_MONOTONIC, &cur_time);
+                km_best_time = time_difference_ms(&start_time,&cur_time);
             }
         }
         kmeans_dual_solution_impl(km_clusters_best,&prob,DUAL_EPS1_DEFAULT,
                                         DUAL_EPS2_DEFAULT, DUAL_Y_T_MIN_DEFAULT,
                                         Y_a_best, &Y_T_best, &dc, &work);
         if(dc == 1){
-            cur_time = clock();
-            dc_time = time_difference_ms(start_time,cur_time);
+            clock_gettime(CLOCK_MONOTONIC, &cur_time);
+            dc_time = time_difference_ms(&start_time,&cur_time);
             dc_grad_iter = grad_iter_total;
         }
     }
@@ -168,6 +169,7 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
     smoothed_objective(&prob,Z_tp1,&lambda_min_tp1,&obj_tp1,&work);
     lambda_min_best = lambda_min_tp1;
     obj_best = obj_tp1;
+    memcpy(Z_best,Z_tp1,d2*sizeof(double));
 
     if(verbosity > -1){
         Rprintf("\tSolving K-Means SDP with FORCE\r\n");
@@ -297,8 +299,8 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
                 obj_best = obj_tp1;
                 lambda_min_best = lambda_min_tp1;
                 grad_iter_best = grad_iter_total;
-                cur_time = clock();
-                grad_iter_best_time = time_difference_ms(start_time,cur_time);
+                clock_gettime(CLOCK_MONOTONIC, &cur_time);
+                grad_iter_best_time = time_difference_ms(&start_time,&cur_time);
             }
 
             if(verbosity > 0){
@@ -306,12 +308,13 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
             }
             grad_iter_total++;
 
-            // STEP 3AH -- Check early stop relative error criterion
             if(early_stop_mode > 0) {
+                dtmp1 = last_es_obj[ grad_iter_total % early_stop_lag];
                 last_es_obj[ grad_iter_total % early_stop_lag] = obj_tp1;
             }
+            // STEP 3AH -- Check early stop relative error criterion
             if(early_stop_mode == 1 && grad_iter_total-last_restart > early_stop_lag) {
-                //absolute error
+                //absolute error                
                 dtmp1 = min_array(early_stop_lag,last_es_obj);
                 dtmp2 = max_array(early_stop_lag,last_es_obj);
                 dtmp1 = dtmp2 - dtmp1;
@@ -319,17 +322,24 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
             }
             if(early_stop_mode == 2 && grad_iter_total-last_restart > early_stop_lag) {
                 //relative error
-                dtmp1 = min_array(early_stop_lag,last_es_obj);
                 dtmp2 = max_array(early_stop_lag,last_es_obj);
-                dtmp1 = (dtmp2 - dtmp1) / (dtmp1 + 0.000001);
-                early_stop = dtmp1 > early_stop_eps ? 0 : 1;
+                if(verbosity > 2){
+                    Rprintf("\t\tDebug %f\r\n",early_stop_eps);
+                    Rprintf("\t\tDebug %f\r\n",dtmp1);
+                    Rprintf("\t\tDebug %f\r\n",dtmp2);
+                }
+                double dtmp3 = dtmp1 > 0 ? dtmp1 : -1.0*dtmp1;
+                double dtmp4 = (dtmp2 - dtmp1) / (dtmp3 + 0.000001);
+                if(verbosity > 2) {
+                    Rprintf("\t\tDebug %f\r\n",dtmp4);
+                }
+                early_stop = dtmp4 > early_stop_eps ? 0 : 1;
             }
-
 
         }
 
         // STEP 3B -- Dual Certificate Search
-        if(primal_only == 0) {
+        if(primal_only == 0  && dc == 0) {
             new_best_km = 0;
             project_E(&prob,Z_best,lambda_min_best,results->B_Z_best);
             for(int i=0; i < km_rep; i++){
@@ -343,17 +353,17 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
                     km_clusters_new = km_clusters_tmp;
                     km_iter_best = km_iter_total;
                     new_best_km = 1;
-                    cur_time = clock();
-                    km_best_time = time_difference_ms(start_time,cur_time);
+                    clock_gettime(CLOCK_MONOTONIC, &cur_time);
+                    km_best_time = time_difference_ms(&start_time,&cur_time);
                 }
             }
-            if(new_best_km && dc == 0){
+            if(new_best_km){
                 kmeans_dual_solution_impl(km_clusters_best,&prob,DUAL_EPS1_DEFAULT,
                                                 DUAL_EPS2_DEFAULT, DUAL_Y_T_MIN_DEFAULT,
                                                 Y_a_best, &Y_T_best, &dc, &work);
                 if(dc == 1){
-                    cur_time = clock();
-                    dc_time = time_difference_ms(start_time,cur_time);
+                    clock_gettime(CLOCK_MONOTONIC, &cur_time);
+                    dc_time = time_difference_ms(&start_time,&cur_time);
                     dc_grad_iter = grad_iter_total;
                 }
             }
@@ -397,8 +407,8 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
     results->grad_iter_best = grad_iter_best;
     results->grad_iter_best_time = grad_iter_best_time;
     results->kmeans_opt_val = km_val_best;
-    cur_time = clock();
-    results->total_time = time_difference_ms(start_time,cur_time);
+    clock_gettime(CLOCK_MONOTONIC, &cur_time);
+    results->total_time = time_difference_ms(&start_time,&cur_time);
 
     if(verbosity > -1){
         Rprintf("\tFORCE Algorithm Complete\r\n");
@@ -421,7 +431,7 @@ void FORCE(double* D, double* D_kmeans, double* E, double* ESI, double* X0,
 void FORCE_R(double* D, double* D_kmeans, double* E, double* ESI, double* X0, int* d, int* K,
     int* in_verbosity, int* in_kmeans_iter, int* in_dual_frequency, int* in_max_iter,
     int* in_finish_pgd, int* in_primal_only, int* in_number_restarts, int* in_restarts, double* in_alpha, double* in_eps_obj,
-    int* in_early_stop_mode, int* in_early_stop_lag, double* in_early_stop_eps, 
+    int* in_early_stop_mode, int* in_early_stop_lag, double* in_early_stop_eps,
     double* out_Z_T, double* out_B_Z_T, double* out_Z_T_lmin, double* out_Z_best, double* out_B_Z_best, double* out_Z_best_lmin,
     double* out_B_Z_T_opt_val, double* out_B_Z_best_opt_val, double* out_kmeans_opt_val,  int* out_kmeans_best, double* out_kmeans_best_time,
     int* out_kmeans_iter_best, int* out_kmeans_iter_total, int* out_dc, double* out_dc_time,

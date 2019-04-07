@@ -440,7 +440,7 @@ gforce.PECOK_adapt <- function(X=NULL, D=NULL, sigma_hat = NULL, force_opts = NU
 #' @export
 gforce.defaults <- function(d){
   options <- NULL
-  options$adapt_init_mode = 0
+  options$adapt_init_mode = 1
   options$alpha = 10^-4
   options$dual_frequency = 50
   options$duality_gap = 10^-5
